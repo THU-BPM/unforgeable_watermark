@@ -163,6 +163,7 @@ main.py
 
 # log
 log/
+*.DS_store
 
 # model
 model/

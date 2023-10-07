@@ -6,7 +6,7 @@ import os
 import json
 import torch.nn.functional as F
 from model_key import SubNet
-from transformers import GPT2Tokenizer, AutoTokenizer
+from transformers import GPT2Tokenizer, AutoTokenizer, LlamaTokenizer
 import torch.nn as nn
 import json
 
@@ -15,17 +15,22 @@ class TransformerClassifier(nn.Module):
         super(TransformerClassifier, self).__init__()
         self.binary_classifier = SubNet(bit_number, b_layers)
         self.classifier = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
+        self.fc_hidden = nn.Linear(hidden_dim, hidden_dim)
         self.fc = nn.Linear(hidden_dim, num_classes)
         self.sigmoid = nn.Sigmoid()
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, x):
         batch_size, seq_len, _ = x.size()
         x1 = x.view(batch_size*seq_len, -1)
-        # import ipdb; ipdb.set_trace()
         features = self.binary_classifier(x1)
         features = features.view(batch_size, seq_len, -1)  # Ensure LSTM compatible shape
         output, _ = self.classifier(features)
-        output = self.fc(output[:, -1, :])  # Take the last LSTM output for classification
+        output = self.fc_hidden(output[:, -1, :])  # Take the last LSTM output for classification
+        output = self.dropout(output)
+        output = self.sigmoid(output)
+        output = self.fc(output)  
+        output = self.dropout(output)
         output = self.sigmoid(output)
         return output
 
@@ -39,7 +44,7 @@ class Seq2SeqDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx]
 
-def prepare_data(filepath, train_or_test="train", llm_name="gpt2", bit=4, z_value=4):
+def prepare_data(filepath, train_or_test="train", llm_name="gpt2", bit=16, z_value=4):
     data = []
     if train_or_test == "train":
         with open(filepath, 'r') as f:
@@ -66,8 +71,8 @@ def prepare_data(filepath, train_or_test="train", llm_name="gpt2", bit=4, z_valu
                 elif llm_name == "opt-1.3b":
                     tokenizer = AutoTokenizer.from_pretrained("facebook/opt-1.3b", use_fast=False)
                     inputs = tokenizer(inputs, return_tensors="pt", add_special_tokens=True)
-                elif llm_name == "opt-2.7b":
-                    tokenizer = AutoTokenizer.from_pretrained("facebook/opt-2.7b", use_fast=False)
+                elif llm_name == "llama-7b":
+                    tokenizer = LlamaTokenizer.from_pretrained("decapoda-research/llama-7b-hf")
                     inputs = tokenizer(inputs, return_tensors="pt", add_special_tokens=True)
                     
                 inputs_bin = [int_to_bin_list(n, bit) for n in inputs["input_ids"].squeeze()]
@@ -143,9 +148,10 @@ def train_model(_bit_number, _input_dir, model_file, output_model_dir, b_layers,
 
     print("private detector:")
     # save the average acc, tpr, fpr, tnr, fnr of the last 5 epochs
-    acc_avg, tpr_avg, fpr_avg, tnr_avg, fnr_avg = 0, 0, 0, 0, 0
+    acc_avg, tpr_avg, fpr_avg, tnr_avg, fnr_avg, f1_avg = 0, 0, 0, 0, 0, 0
     # Train and evaluate
-    for epoch in range(100):
+    epochs = 80
+    for epoch in range(epochs):
         model.train()
         train_losses = []
         correct = 0
@@ -160,8 +166,8 @@ def train_model(_bit_number, _input_dir, model_file, output_model_dir, b_layers,
             optimizer.step()
             train_losses.append(loss.item())
 
-            # 计算准确率
-            predicted = (outputs.data > 0.5).float() # 假设你的模型输出一个概率预测
+            # calculate accuracy
+            predicted = (outputs.data > 0.5).float() 
             total += targets.size(0)
             correct += (predicted == targets).sum().item()
 
@@ -178,7 +184,7 @@ def train_model(_bit_number, _input_dir, model_file, output_model_dir, b_layers,
                 loss = loss_fn(outputs, targets.float())
                 test_losses.append(loss.item())
 
-                # calculate acc, tp, fp, fn, tn
+                # calculate acc, tp, fp, fn, tn, f1
                 predicted = (outputs.data > 0.5).int() 
                 total += targets.size(0)
                 correct += (predicted == targets).sum().item()
@@ -192,29 +198,30 @@ def train_model(_bit_number, _input_dir, model_file, output_model_dir, b_layers,
         test_fpr = 100 * fp / (fp + tn)
         test_tnr = 100 * tn / (fp + tn)
         test_fnr = 100 * fn / (tp + fn)
+        test_f1 = 100 * 2 * tp / (2 * tp + fn + fp)
 
-        print(f'Epoch: {epoch}, Train Loss: {sum(train_losses) / len(train_losses)}, Train Accuracy: {train_accuracy}%, Test Loss: {sum(test_losses) / len(test_losses)}, Test Accuracy: {test_accuracy}%, Test TPR: {test_tpr}%, Test FPR: {test_fpr}%, Test TNR: {test_tnr}%, Test FNR: {test_fnr}%')
-        print('\n')
+        print(f'Epoch: {epoch}, Train Loss: {sum(train_losses) / len(train_losses)}, Train Accuracy: {train_accuracy}%, Test Loss: {sum(test_losses) / len(test_losses)}, Test Accuracy: {test_accuracy}%, Test TPR: {test_tpr}%, Test FPR: {test_fpr}%, Test TNR: {test_tnr}%, Test FNR: {test_fnr}%, Test F1: {test_f1}%')
 
-        # calculate the average acc, tpr, fpr, tnr, fnr of the last 5 epochs
-        if epoch >= 95:
+        # calculate the average acc, tpr, fpr, tnr, fnr, f1 of the last 5 epochs
+        if epochs - 5 <= epoch < epochs:
             acc_avg += test_accuracy
             tpr_avg += test_tpr
             fpr_avg += test_fpr
             tnr_avg += test_tnr
             fnr_avg += test_fnr
+            f1_avg += test_f1
     
     acc_avg /= 5
     tpr_avg /= 5
     fpr_avg /= 5
     tnr_avg /= 5
     fnr_avg /= 5
+    f1_avg /= 5
 
     os.makedirs(os.path.dirname(output_model_dir + "new.pt"), exist_ok=True)
     torch.save(model.binary_classifier.state_dict(), output_model_dir + "new.pt")
-    print(f'Test Accuracy: {acc_avg}%, Test TPR: {tpr_avg}%, Test FPR: {fpr_avg}%, Test TNR: {tnr_avg}%, Test FNR: {fnr_avg}%')
+    print(f'Test Accuracy: {acc_avg}%, Test TPR: {tpr_avg}%, Test FPR: {fpr_avg}%, Test TNR: {tnr_avg}%, Test FNR: {fnr_avg}%, Test F1: {f1_avg}%')
 
-    print("\n")
     print("public detector:")
     corr_num, tot_num, tp, fp, fn, tn = 0, 0, 0, 0, 0, 0
     with open(os.path.join(_input_dir, 'test_data.jsonl'), 'r') as f:
@@ -239,7 +246,8 @@ def train_model(_bit_number, _input_dir, model_file, output_model_dir, b_layers,
     test_fpr = 100 * fp / (fp + tn)
     test_tnr = 100 * tn / (fp + tn)
     test_fnr = 100 * fn / (tp + fn)
-    print(f'Test Accuracy: {test_accuracy}%, Test TPR: {test_tpr}%, Test FPR: {test_fpr}%, Test TNR: {test_tnr}%, Test FNR: {test_fnr}%')
+    test_f1 = 100 * 2 * tp / (2 * tp + fn + fp)
+    print(f'Test Accuracy: {test_accuracy}%, Test TPR: {test_tpr}%, Test FPR: {test_fpr}%, Test TNR: {test_tnr}%, Test FNR: {test_fnr}%, Test F1: {test_f1}%')
 
 if __name__ == '__main__':
     import argparse
@@ -251,6 +259,6 @@ if __name__ == '__main__':
     parser.add_argument('--model_file', type=str, default='model/model_parameters4.pt')
     parser.add_argument('--output_model_dir', type=str, default='model/model_parameters4.pt')
     parser.add_argument('--layers', type=int, default=4)
-    parser.add_argument('--z_value', type=int, default=4)
+    parser.add_argument('--z_value', type=float, default=4.0)
     args = parser.parse_args()
     train_model(args.bit_number, args.input, args.model_file, args.output_model_dir, args.layers, args.z_value, args.llm_name)

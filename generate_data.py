@@ -90,7 +90,7 @@ def generate_data_from_model(bit_number, sample_number, model_dir, output_file):
     # Iterating over all pairs of numbers
     for num1 in tqdm(out_numbers):
         # create a list of labels for each num1, half 0s and half 1s
-        ## random pick 4 number from numbers
+        ## randomly pick 4 number from numbers
         new_numbers = random.sample(numbers, sample_number*2)
         for num2 in new_numbers:
             bin1 = int_to_bin_list(num1, bit_number)

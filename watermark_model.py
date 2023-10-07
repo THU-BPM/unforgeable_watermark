@@ -3,6 +3,7 @@ from transformers import (GPT2Tokenizer,
                           GPT2LMHeadModel,
                           AutoTokenizer,
                           AutoModelForCausalLM,
+                          LlamaTokenizer,
                           LogitsProcessor,
                           LogitsProcessorList)
 from math import sqrt
@@ -38,9 +39,9 @@ class CustomLogitsProcessor(LogitsProcessor):
         elif self.llm_name == "opt-1.3b":
             for b_idx in range(input_ids.shape[0]):
                 scores[b_idx][2] = -10000
-        elif self.llm_name == "opt-2.7b":
+        elif self.llm_name == "llama-7b":
             for b_idx in range(input_ids.shape[0]):
-                scores[b_idx][2] = -10000
+                scores[b_idx][1] = -10000
         return scores
     
 class WatermarkLogitsProcessor(LogitsProcessor):
@@ -63,7 +64,7 @@ class WatermarkLogitsProcessor(LogitsProcessor):
     def _get_greenlist_ids(self, input_ids, scores):
         greenlist_ids = []
         # Get the last 'window_size - 1' items from input_ids
-        last_nums = input_ids[-(self.window_size-1):]
+        last_nums = input_ids[-(self.window_size-1):] if self.window_size-1 > 0 else []
         if self.mode == "sample":
             _, candidate_tokens = torch.topk(input=scores, k=20, largest=True, sorted=False)
         else:
@@ -104,9 +105,9 @@ class WatermarkLogitsProcessor(LogitsProcessor):
             elif self.llm_name == "opt-1.3b":
                 for b_idx in range(input_ids.shape[0]):
                     scores[b_idx][2] = -10000
-            elif self.llm_name == "opt-2.7b":
+            elif self.llm_name == "llama-7b":
                 for b_idx in range(input_ids.shape[0]):
-                    scores[b_idx][2] = -10000
+                    scores[b_idx][1] = -10000
             return scores
         
         green_tokens_mask = torch.zeros_like(scores)
@@ -121,12 +122,12 @@ class WatermarkLogitsProcessor(LogitsProcessor):
         if self.llm_name == "gpt2":
             for b_idx in range(input_ids.shape[0]):
                 scores[b_idx][50256] = -10000
-        elif self.llm_name == "opt-2.7b":
-            for b_idx in range(input_ids.shape[0]):
-                scores[b_idx][2] = -10000
         elif self.llm_name == "opt-1.3b":
             for b_idx in range(input_ids.shape[0]):
                 scores[b_idx][2] = -10000
+        elif self.llm_name == "llama-7b":
+            for b_idx in range(input_ids.shape[0]):
+                scores[b_idx][1] = -10000
 
         return scores
     
@@ -135,7 +136,7 @@ class Watermark:
     def __init__(
         self,
         bit_number: int = 8,
-        window_size: int = 3,
+        window_size: int = 5,
         layers: int = 3,
         gamma: float = 0.5,
         delta: float = 2.0,
@@ -157,7 +158,7 @@ class Watermark:
 
     def random_sample(self, input_ids, is_green):
         # Get the last 'window_size - 1' items from input_ids
-        last_nums = input_ids[-(self.window_size-1):]
+        last_nums = input_ids[-(self.window_size-1):] if self.window_size-1 > 0 else []
         while True:
             number = random.choice(self.vocab)
             # Append the new random number to the list
@@ -180,7 +181,7 @@ class Watermark:
     
     def judge_green(self, input_ids, current_number):
         # Get the last 'window_size - 1' items from input_ids
-        last_nums = input_ids[-(self.window_size-1):]
+        last_nums = input_ids[-(self.window_size-1):] if self.window_size-1 > 0 else []
         # Append the current number to the list
         pair = list(last_nums) + [current_number]
         merged_tuple = tuple(pair)
@@ -212,15 +213,16 @@ class Watermark:
 
     def _compute_z_score(self, observed_count, T):
         # count refers to number of green tokens, T is total number of tokens
+        sigma = 0.01
         expected_count = self.gamma
         numer = observed_count - expected_count * T
-        denom = sqrt(T * expected_count * (1 - expected_count))
+        denom = sqrt(T * expected_count * (1 - expected_count) + sigma * sigma * T)
         z = numer / denom
         return z
     
     def generate_list_with_green_ratio(self, length: int, green_ratio: float):
 
-        token_list = random.sample(self.vocab, self.window_size - 1)
+        token_list = random.sample(self.vocab, self.window_size - 1) if self.window_size - 1 > 0 else random.sample(self.vocab, 1)
         is_green = []
 
         while len(token_list) < length:
@@ -272,19 +274,20 @@ class Watermark:
         as a logits processor. """
     
         print("loading llm...")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
         if llm_name == "gpt2":
             tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
             model = GPT2LMHeadModel.from_pretrained("gpt2")
+            model = model.to(device)
         elif llm_name == "opt-1.3b":
             tokenizer = AutoTokenizer.from_pretrained("facebook/opt-1.3b", use_fast=False)
             model = AutoModelForCausalLM.from_pretrained("facebook/opt-1.3b", torch_dtype=torch.float16).cuda()
-        elif llm_name == "opt-2.7b":
-            tokenizer = AutoTokenizer.from_pretrained("facebook/opt-2.7b", use_fast=False)
-            model = AutoModelForCausalLM.from_pretrained("facebook/opt-2.7b", torch_dtype=torch.float16).cuda()
-
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = model.to(device)
+            model = model.to(device)
+        elif llm_name == "llama-7b":
+            tokenizer = LlamaTokenizer.from_pretrained("decapoda-research/llama-7b-hf")
+            model = AutoModelForCausalLM.from_pretrained("decapoda-research/llama-7b-hf", device_map='auto')
+        
 
         watermark_processor = WatermarkLogitsProcessor(vocab=list(tokenizer.get_vocab().values()),
                                                         delta=self.delta,
@@ -314,6 +317,7 @@ class Watermark:
         generate_with_watermark = partial(
             model.generate,
             logits_processor=LogitsProcessorList([watermark_processor]), 
+            no_repeat_ngram_size=4,
             **gen_kwargs
         )
 
@@ -336,7 +340,7 @@ class Watermark:
                 lines = f1.readlines()
         elif dataset_name == "dbpedia":
             with open("./original_data/dbpedia_validation.json") as f1:
-                lines = f1.readlines()[500:]
+                lines = f1.readlines()
 
         idx = 1
         for line in lines: 
@@ -354,11 +358,11 @@ class Watermark:
                 prompt["input_ids"] = text_tokenized["input_ids"][:, : prompt_length]
                 prompt["attention_mask"] = text_tokenized["attention_mask"][:, : prompt_length]
 
-                print("generate_with_watermark...")
+                print("generate with watermark...")
                 output_with_watermark = generate_with_watermark(**prompt)
                 output_with_watermark = output_with_watermark[:,prompt["input_ids"].shape[-1]:]
 
-                print("generate_without_watermark...")
+                print("get unwatermarked text...")
                 output_without_watermark = text_tokenized["input_ids"][:,prompt_length:prompt_length + 200]
 
                 _, _, z_score = self.green_token_mask_and_stats(output_with_watermark.squeeze(0))
@@ -393,7 +397,7 @@ if __name__  == "__main__":
     parser.add_argument("--llm_name", type=str, default="gpt2")
     parser.add_argument("--dataset_name", type=str, default="c4")
     parser.add_argument("--bit_number", type=int, default=16)
-    parser.add_argument("--window_size", type=int, default=3)
+    parser.add_argument("--window_size", type=int, default=5)
     parser.add_argument("--layers", type=int, default=5)
     parser.add_argument("--train_num_samples", type=int, default=10000)
     parser.add_argument("--model_dir", type=str, default="model/model_16_window_3_layer_5_new.pt")
