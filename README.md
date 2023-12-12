@@ -1,4 +1,4 @@
-# A Private Watermark for Large Language Models
+# An Unforgeable Publicly Verifiable Watermark for Large Language Models
 
 ## Conda Environment
 
