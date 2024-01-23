@@ -69,3 +69,18 @@ python detector.py --llm_name gpt2 --bit 16 --window_size 5 --input ./experiment
 Tips: 
 - You may need to change llm tokenizer path in `detector.py`, line 69, 72, 75.
 - You may need to set appropriate z_value in different experiment settings.
+
+## Citation
+
+If you find this repo useful, please cite our paper:
+
+```
+@misc{liu2023unforgeable,
+      title={An Unforgeable Publicly Verifiable Watermark for Large Language Models}, 
+      author={Aiwei Liu and Leyi Pan and Xuming Hu and Shu'ang Li and Lijie Wen and Irwin King and Philip S. Yu},
+      year={2023},
+      eprint={2307.16230},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL}
+}
+```
