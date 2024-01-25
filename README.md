@@ -55,7 +55,7 @@ python detector.py --llm_name gpt2 --bit 16 --window_size 3 --input ./data --mod
 ```
 
 ## Model and Data of Main Experiments
-In directory `./experiments/`, we provide the trained watermark generator model of main experiments, together with the training data and testing data that are already generated. For each experiment setting (llm: gpt2/opt-1.3b/llama-7b, top-k/beam search), 500 sentences of watermarked text (tagged as 1) and 500 sentences of the corresponding unwatermarked text (natural corpus, tagged as 0) are provided in `test_data.jsonl`.
+In directory `./experiments/main_experiments/`, we provide the trained watermark generator model of main experiments, together with the training data and testing data that are already generated. For each experiment setting (llm: gpt2/opt-1.3b/llama-7b, top-k/beam search), 500 sentences of watermarked text (tagged as 1) and 500 sentences of the corresponding unwatermarked text (natural corpus, tagged as 0) are provided in `test_data.jsonl`.
 
 You can train and test our private watermark detector simply by:
 1. changing line 122 in `detector.py` into:
@@ -69,6 +69,9 @@ python detector.py --llm_name gpt2 --bit 16 --window_size 5 --input ./experiment
 Tips: 
 - You may need to change llm tokenizer path in `detector.py`, line 69, 72, 75.
 - You may need to set appropriate z_value in different experiment settings.
+
+## Others
+As for robustness against rewrite attack (corresponding to Appendix B in our paper), we observed varying performances in robustness among different watermark generator models. Consequently, we selected watermark generators that demonstrated relatively better performance. Trained generator models are provided in `experiments/robustness/generator_model/`. You can train your own detector based on the provided generators. Don't forget to set appropriate z_value according to the performance of key-based detector (i.e. public detector).
 
 ## Citation
 
