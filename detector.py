@@ -18,7 +18,6 @@ class TransformerClassifier(nn.Module):
         self.fc_hidden = nn.Linear(hidden_dim, hidden_dim)
         self.fc = nn.Linear(hidden_dim, num_classes)
         self.sigmoid = nn.Sigmoid()
-        self.dropout = nn.Dropout(0.1)
 
     def forward(self, x):
         batch_size, seq_len, _ = x.size()
@@ -27,10 +26,8 @@ class TransformerClassifier(nn.Module):
         features = features.view(batch_size, seq_len, -1)  # Ensure LSTM compatible shape
         output, _ = self.classifier(features)
         output = self.fc_hidden(output[:, -1, :])  # Take the last LSTM output for classification
-        output = self.dropout(output)
         output = self.sigmoid(output)
         output = self.fc(output)  
-        output = self.dropout(output)
         output = self.sigmoid(output)
         return output
 
