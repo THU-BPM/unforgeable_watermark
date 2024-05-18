@@ -4,7 +4,7 @@
 
 ## News
 
-💡 Our unforgeable watermark has been integrated into [MarkLLM](https://github.com/THU-BPM/MarkLLM), an open-source toolkit for LLM watermarking. You can now try out our watermarking method in the MarkLLM repository!
+💡 **_<span style="color: #0366d6;">💡 Our unforgeable watermark has been integrated into [MarkLLM](https://github.com/your_username/MarkLLM), an open-source toolkit for LLM watermarking. You can now try out our watermarking method in the MarkLLM repository!</span>_**
 
 ## Conda Environment
 
