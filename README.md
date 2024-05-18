@@ -1,5 +1,11 @@
 # An Unforgeable Publicly Verifiable Watermark for Large Language Models
 
+![UPV](./figs/private-watermark.png)
+
+## News
+
+💡 Our unforgeable watermark has been integrated into [MarkLLM](https://github.com/THU-BPM/MarkLLM), an open-source toolkit for LLM watermarking. You can now try out our watermarking method in the MarkLLM repository!
+
 ## Conda Environment
 
 - python 3.9
