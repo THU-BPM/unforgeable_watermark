@@ -84,12 +84,12 @@ As for robustness against rewrite attack (corresponding to Appendix B in our pap
 If you find this repo useful, please cite our paper:
 
 ```
-@misc{liu2023unforgeable,
-      title={An Unforgeable Publicly Verifiable Watermark for Large Language Models}, 
-      author={Aiwei Liu and Leyi Pan and Xuming Hu and Shu'ang Li and Lijie Wen and Irwin King and Philip S. Yu},
-      year={2023},
-      eprint={2307.16230},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL}
+@inproceedings{
+  liu2024an,
+  title={An Unforgeable Publicly Verifiable Watermark for Large Language Models},
+  author={Aiwei Liu and Leyi Pan and Xuming Hu and Shuang Li and Lijie Wen and Irwin King and Philip S. Yu},
+  booktitle={The Twelfth International Conference on Learning Representations},
+  year={2024},
+  url={https://openreview.net/forum?id=gMLQwKDY3N}
 }
 ```
